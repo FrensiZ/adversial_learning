@@ -1,4 +1,4 @@
-import torch.nn as nn
+
 
 def create_sequences(data, seq_length, stride, change_type='pct'):
     # Calculate changes
