@@ -7,7 +7,7 @@ from gymnasium import spaces
 from stable_baselines3.common.callbacks import BaseCallback
 from scipy.stats import wasserstein_distance, gaussian_kde
 from collections import Counter
-
+from torch.cuda.amp import autocast, GradScaler
 
 class LSTMModel(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim, num_layers):  # Changed default input_dim
@@ -57,7 +57,8 @@ class CustomEnv(gym.Env):
         self.val_data = val_data
         
         # Discriminator
-        self.discriminator = discriminator
+        self.device = th.device("mps" if th.backends.mps.is_available() else "cpu")
+        self.discriminator = discriminator.to(self.device)
         self.d_optimizer = d_optimizer
         self.criterion = nn.BCEWithLogitsLoss()
 
@@ -70,6 +71,8 @@ class CustomEnv(gym.Env):
         ### HERE
         self.last_bce = -np.log(0.5)
         ### HERE
+
+        self.scaler = GradScaler()
     
     def step(self, action):
 
@@ -107,13 +110,13 @@ class CustomEnv(gym.Env):
         ### HERE
         
         return start_token, {}
-    
+
     def _get_reward(self, action):
 
         self.discriminator.eval()
-
+        
         with th.no_grad():
-            temp_action = th.tensor(np.array([[action]]), dtype=th.long)
+            temp_action = th.tensor(np.array([[action]]), dtype=th.long).to(self.device)
             prediction, self.hidden_states = self.discriminator(temp_action, self.hidden_states)
             prediction = prediction[0,0]
             label = th.ones_like(prediction)
@@ -121,15 +124,6 @@ class CustomEnv(gym.Env):
             reward = self.last_bce - current_bce
             self.last_bce = current_bce
             return reward
-
-        # with th.no_grad():
-        #     temp_action = th.tensor(np.array([[action]]), dtype=th.long)
-        #     prediction, self.hidden_states = self.discriminator(temp_action, self.hidden_states)
-        #     prediction = prediction[0,0]
-        #     label = th.ones_like(prediction)
-        #     seq_loss = self.criterion(prediction, label)
-        #     reward = -(seq_loss.item())
-        #     return reward
 
     def _is_done(self):
 
@@ -184,35 +178,62 @@ class CustomEnv(gym.Env):
             return acc_full.item(), acc_1.item(), acc_2.item(), (acc_2 - acc_1).item()
     
     def train_discriminator(self, batch_real, batch_fake):
-        
         self.discriminator.train()
+        batch_real = th.tensor(batch_real, dtype=th.long).to(self.device)
+        batch_fake = th.tensor(batch_fake, dtype=th.long).to(self.device)
         
-        batch_real = th.tensor(batch_real, dtype=th.long)
-        batch_fake = th.tensor(batch_fake, dtype=th.long)
-
-        # Forward pass - real data
-        real_preds, _ = self.discriminator(batch_real, None)
-        real_preds = real_preds.view(-1)
-        real_labels = th.ones_like(real_preds) * 0.9  # Label smoothing
-        real_loss = self.criterion(real_preds, real_labels)
-
-        # Forward pass - fake data
-        fake_preds, _ = self.discriminator(batch_fake, None)
-        fake_preds = fake_preds.view(-1)
-        fake_labels = th.ones_like(fake_preds) * 0.1  # Label smoothing
-        fake_loss = self.criterion(fake_preds, fake_labels)
-
-        # Combined loss and update
-        d_loss = (real_loss + fake_loss) / 2
+        with autocast(device_type='mps'):
+            # Forward pass - real data
+            real_preds, _ = self.discriminator(batch_real, None)
+            real_preds = real_preds.view(-1)
+            real_labels = th.ones_like(real_preds) * 0.9
+            real_loss = self.criterion(real_preds, real_labels)
+            
+            # Forward pass - fake data
+            fake_preds, _ = self.discriminator(batch_fake, None)
+            fake_preds = fake_preds.view(-1)
+            fake_labels = th.ones_like(fake_preds) * 0.1
+            fake_loss = self.criterion(fake_preds, fake_labels)
+            
+            d_loss = (real_loss + fake_loss) / 2
+            
         self.d_optimizer.zero_grad()
-        d_loss.backward()
-        th.nn.utils.clip_grad_norm_(self.discriminator.parameters(), max_norm=0.5)  # Add gradient clipping
-        self.d_optimizer.step()
-
-        with th.no_grad():
-            discriminator_loss = d_loss.item()
+        self.scaler.scale(d_loss).backward()
+        self.scaler.step(self.d_optimizer)
+        self.scaler.update()
         
-        return discriminator_loss
+        return d_loss.item()
+
+    # def train_discriminator(self, batch_real, batch_fake):
+        
+    #     self.discriminator.train()
+        
+    #     batch_real = th.tensor(batch_real, dtype=th.long)
+    #     batch_fake = th.tensor(batch_fake, dtype=th.long)
+
+    #     # Forward pass - real data
+    #     real_preds, _ = self.discriminator(batch_real, None)
+    #     real_preds = real_preds.view(-1)
+    #     real_labels = th.ones_like(real_preds) * 0.9  # Label smoothing
+    #     real_loss = self.criterion(real_preds, real_labels)
+
+    #     # Forward pass - fake data
+    #     fake_preds, _ = self.discriminator(batch_fake, None)
+    #     fake_preds = fake_preds.view(-1)
+    #     fake_labels = th.ones_like(fake_preds) * 0.1  # Label smoothing
+    #     fake_loss = self.criterion(fake_preds, fake_labels)
+
+    #     # Combined loss and update
+    #     d_loss = (real_loss + fake_loss) / 2
+    #     self.d_optimizer.zero_grad()
+    #     d_loss.backward()
+    #     th.nn.utils.clip_grad_norm_(self.discriminator.parameters(), max_norm=0.5)  # Add gradient clipping
+    #     self.d_optimizer.step()
+
+    #     with th.no_grad():
+    #         discriminator_loss = d_loss.item()
+        
+    #     return discriminator_loss
 
 class CustomCallback(BaseCallback):
 
@@ -285,8 +306,8 @@ class CustomCallback(BaseCallback):
                 }
 
             max_accuracy = 0.75     # Don't want discriminator too strong
-            min_batches = 5  # Changed from 10
-            max_batches = 50  # Changed from 100
+            min_batches = 3         # Changed from 10
+            max_batches = 50        # Changed from 100
 
             # Dynamic batch sizing
             curr_batch_size = self.batch_size

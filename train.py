@@ -1,25 +1,13 @@
-# Same imports as data_prep.py
-# import numpy as np
-# import torch as th
-# import torch.nn as nn
-# import torch.optim as optim
-# import pandas as pd
-# import os
-# from collections import Counter
-# import matplotlib.pyplot as plt
-# from statsmodels.tsa.stattools import acf
-#from scipy.stats import wasserstein_distance, gaussian_kde
-# import seaborn as sns
-# from scipy.stats import skew, kurtosis
-# import gymnasium as gym
-# from gymnasium import spaces
-
-
 import pickle
+import torch
 from models import *
 from visualization import *
 from stable_baselines3.common.monitor import Monitor
 from sb3_contrib import RecurrentPPO
+
+
+device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+print(f"Using device: {device}")
 
 # Load the processed data
 with open('processed_data.pkl', 'rb') as f:
@@ -29,6 +17,11 @@ with open('processed_data.pkl', 'rb') as f:
 X_train = data['X_train']
 X_val = data['X_val']
 X_test = data['X_test']
+
+X_train = torch.tensor(X_train).to(device)
+X_val = torch.tensor(X_val).to(device)
+X_test = torch.tensor(X_test).to(device)
+
 token_size = data['token_size']
 token_limit = data['token_limit']
 bin_start = data['bin_start']
@@ -43,17 +36,18 @@ n_days = X_train.shape[1]
 
 # LSTM Settings
 hidden_dim = 128
-batch_size = 256
-learning_rate = 2e-4
-seq_len = n_days-1
-num_epochs = 20
+#batch_size = 256
+#lr_supervised = 2e-4
+#seq_len = n_days-1
+#num_epochs = 20
 hidden_layers = 2
 
 sw_pretraining = 'sw_pretrain_50.pth'
 sw_posttraining = 'sw_posttrain_50.pth'
 gail_training = "GAIL_weights_50_delta_bce.zip"
 
-discriminator = LSTM_Discriminator(vocab_size=token_size, embedding_dim=64, hidden_dim=256)
+discriminator = LSTM_Discriminator(vocab_size=token_size, embedding_dim=64, hidden_dim=256).to(device)
+discriminator = torch.compile(discriminator)
 d_optimizer = optim.Adam(discriminator.parameters(), lr=2e-4, betas=(0.5, 0.999))
 
 env_GAIL = CustomEnv(token_size, bin_start, bin_stop, bin_width,
@@ -64,11 +58,11 @@ env_GAIL = Monitor(env_GAIL, filename=None)
 
 
 ##### GAIL Settings
-
+##### GAIL Settings
 n_steps=(n_days-2)*100
 batch_size=(n_days-2)*10
 n_epochs = 4
-timesteps = 300000
+timesteps = 100000
 
 clip_range=0.05            # Lower PPO clipping
 ent_coef=0.005             # Moderate exploration
@@ -76,7 +70,7 @@ vf_coef=0.3                # Balanced value function importance
 gamma=1                    # Standard discount
 gae_lambda=0.95            # Standard GAE lambda
 lr_gail=5e-7               # Just small changes because performance is already perfect.
-
+##### GAIL Settings
 ##### GAIL Settings
 
 
@@ -113,3 +107,10 @@ model_post_weight = transfer_weights_from_saved(sw_pretraining, model_pre_weight
 
 model_post_weight.learn(timesteps, callback=callback_GAIL)
 env_GAIL.close()
+
+plot_losses(callback_GAIL.pg_losses, callback_GAIL.value_losses, callback_GAIL.entropy_losses)
+plot_sequence_metrics(callback_GAIL.rewards, callback_GAIL.sequence_metrics['wasserstein'],
+                      callback_GAIL.sequence_metrics['kl_div'])
+plot_discriminator(callback_GAIL.disc_metrics_per_batch['loss'],
+                   callback_GAIL.disc_metrics_per_batch['accuracy'],
+                   callback_GAIL.disc_metrics_per_batch['accuracy_difference'])
