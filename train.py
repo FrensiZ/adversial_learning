@@ -18,9 +18,10 @@ X_train = data['X_train']
 X_val = data['X_val']
 X_test = data['X_test']
 
-X_train = torch.tensor(X_train).to(device)
-X_val = torch.tensor(X_val).to(device)
-X_test = torch.tensor(X_test).to(device)
+# Convert data to long (integer) type before moving to device
+X_train = torch.tensor(X_train, dtype=torch.long).to(device)
+X_val = torch.tensor(X_val, dtype=torch.long).to(device)
+X_test = torch.tensor(X_test, dtype=torch.long).to(device)
 
 token_size = data['token_size']
 token_limit = data['token_limit']
@@ -46,7 +47,9 @@ sw_pretraining = 'sw_pretrain_50.pth'
 sw_posttraining = 'sw_posttrain_50.pth'
 gail_training = "GAIL_weights_50_delta_bce.zip"
 
+# Then modify your discriminator initialization
 discriminator = LSTM_Discriminator(vocab_size=token_size, embedding_dim=64, hidden_dim=256).to(device)
+
 discriminator = torch.compile(discriminator)
 d_optimizer = optim.Adam(discriminator.parameters(), lr=2e-4, betas=(0.5, 0.999))
 

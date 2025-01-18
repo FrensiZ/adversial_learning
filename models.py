@@ -52,10 +52,17 @@ class CustomEnv(gym.Env):
         self.num_bins = int((bin_stop - bin_start) / bin_width)
         self.bin_edges = np.arange(bin_start, bin_stop + bin_width, bin_width)
 
-        # Data
-        self.train_data = train_data
-        self.val_data = val_data
-        
+        # Move data to CPU for gym environment
+        if th.is_tensor(train_data):
+            self.train_data = train_data.cpu().numpy()
+        else:
+            self.train_data = train_data
+            
+        if th.is_tensor(val_data):
+            self.val_data = val_data.cpu().numpy()
+        else:
+            self.val_data = val_data
+
         # Discriminator
         self.device = th.device("mps" if th.backends.mps.is_available() else "cpu")
         self.discriminator = discriminator.to(self.device)
@@ -488,6 +495,9 @@ class CustomCallback(BaseCallback):
                 real_seqs = [env.unwrapped.get_train_sequence() for _ in range(n)]
             else:
                 real_seqs = [env.unwrapped.get_val_sequence() for _ in range(n)]
+            
+            # If sequences are tensors, convert to numpy
+            real_seqs = [seq.cpu().numpy() if th.is_tensor(seq) else seq for seq in real_seqs]
             
             # Prepare batch for model.predict
             batch_size = n
