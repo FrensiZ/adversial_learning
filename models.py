@@ -5,11 +5,14 @@ import torch.optim as optim
 import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3.common.callbacks import BaseCallback
+from scipy.stats import wasserstein_distance, gaussian_kde
+from collections import Counter
+
 
 class LSTMModel(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):  # Changed default input_dim
+    def __init__(self, input_dim, hidden_dim, output_dim, num_layers):  # Changed default input_dim
         super(LSTMModel, self).__init__()
-        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers=hidden_layers, batch_first=True)
+        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers=num_layers, batch_first=True)
         self.fc = nn.Linear(hidden_dim, output_dim)
     
     def forward(self, x, hidden):
@@ -213,7 +216,7 @@ class CustomEnv(gym.Env):
 
 class CustomCallback(BaseCallback):
 
-    def __init__(self, verbose, display_rollout, disc_batch_size):
+    def __init__(self, verbose, display_rollout, disc_batch_size, gail_training):
         
         super(CustomCallback, self).__init__(verbose)
 
@@ -282,13 +285,13 @@ class CustomCallback(BaseCallback):
                 }
 
             max_accuracy = 0.75     # Don't want discriminator too strong
-            min_batches = 10        # Minimum batches to train on
-            max_batches = 100       # Minimum batches to train on
+            min_batches = 5  # Changed from 10
+            max_batches = 50  # Changed from 100
 
             # Dynamic batch sizing
-            curr_batch_size = batch_size
-            if pre_acc < 0.55:  # If discriminator is very weak
-                curr_batch_size = batch_size * 2  # Train on more data
+            curr_batch_size = self.batch_size
+            if pre_acc < 0.52:  # If discriminator is very weak
+                curr_batch_size = self.batch_size * 2  # Train on more data
             
             for batch in range(max_batches):
                 
@@ -306,27 +309,36 @@ class CustomCallback(BaseCallback):
                 self.disc_metrics_per_batch['accuracy_difference'].append(curr_acc_diff)
 
                 if batch >= min_batches:
-
+                    recent_losses = metrics['losses'][-3:]
+                    loss_mean = np.mean(recent_losses)
+                    ideal_loss = -np.log(0.5)  # Binary cross entropy at p=0.5
+                    
+                    # Your existing conditions
                     if curr_acc > max_accuracy:
                         print(f"Discriminator too strong ({curr_acc:.3f}), stopping")
                         break
-
-                    recent_acc = np.mean(metrics['accuracies'][-3:])  # Last 3 batches
-                    if 0.60 < recent_acc < 0.75 and np.std(metrics['accuracies'][-3:]) < 0.02:
-                        print(f"Discriminator stable at {recent_acc:.3f}, stopping")
+                    
+                    recent_acc = np.mean(metrics['accuracies'][-3:])
+                    if 0.48 < recent_acc < 0.52 and np.std(metrics['accuracies'][-3:]) < 0.01:
+                        print(f"Discriminator balanced near 0.5 ({recent_acc:.3f}), stopping")
+                        break
+                        
+                    # Add this new condition
+                    if abs(loss_mean - ideal_loss) < 0.1:
+                        print(f"Loss stabilized near ideal value ({loss_mean:.3f}), stopping")
                         break
 
-                    # Stop if no improvement in last 5 batches
+                    # This condition might be redundant now
                     if batch > 10 and np.std(metrics['accuracies'][-10:]) < 0.01:
                         print("Discriminator converged, stopping")
                         break
-                
+                                
                 # Adjust batch size if needed
-                if batch % 10 == 0:  # Every 10 batches
-                    if curr_acc < 0.60:  # Still too weak
-                        curr_batch_size = min(curr_batch_size * 2, 256)  # Increase data
-                    elif curr_acc > 0.80:  # Getting too strong
-                        curr_batch_size = max(curr_batch_size // 2, n_sequences)  # Decrease data
+                if batch % 20 == 0:  # Every 10 batches
+                    if curr_acc < 0.52:  # Changed from 0.60
+                        curr_batch_size = min(curr_batch_size * 2, 256)
+                    elif curr_acc > 0.65:  # Changed from 0.80
+                        curr_batch_size = max(curr_batch_size // 2, self.batch_size)
                 
             self.disc_metrics_per_batch['n_batches'].append(batch + 1)
             
@@ -527,7 +539,7 @@ class CustomCallback(BaseCallback):
         return kl_div
 
 
-def transfer_weights_from_saved(weights_path, ppo_model, transfer_head, input_dim, hidden_dim, output_dim):
+def transfer_weights_from_saved(weights_path, ppo_model, transfer_head, input_dim, hidden_dim, output_dim, num_layers):
     """
     Load saved supervised weights and transfer to PPO model with optional head transfer
     
@@ -540,7 +552,7 @@ def transfer_weights_from_saved(weights_path, ppo_model, transfer_head, input_di
         output_dim: Output dimension of the supervised model
     """
     # Create temporary supervised model to load weights into
-    temp_supervised = LSTMModel(input_dim, hidden_dim, output_dim)
+    temp_supervised = LSTMModel(input_dim, hidden_dim, output_dim, num_layers)
     
     # Load the saved weights
     saved_weights = th.load(weights_path, weights_only=False)
