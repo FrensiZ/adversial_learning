@@ -1,13 +1,8 @@
 import pickle
-import torch
 from models import *
 from visualization import *
 from stable_baselines3.common.monitor import Monitor
 from sb3_contrib import RecurrentPPO
-
-
-device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-print(f"Using device: {device}")
 
 # Load the processed data
 with open('processed_data.pkl', 'rb') as f:
@@ -17,12 +12,6 @@ with open('processed_data.pkl', 'rb') as f:
 X_train = data['X_train']
 X_val = data['X_val']
 X_test = data['X_test']
-
-# Convert data to long (integer) type before moving to device
-X_train = torch.tensor(X_train, dtype=torch.long).to(device)
-X_val = torch.tensor(X_val, dtype=torch.long).to(device)
-X_test = torch.tensor(X_test, dtype=torch.long).to(device)
-
 token_size = data['token_size']
 token_limit = data['token_limit']
 bin_start = data['bin_start']
@@ -47,10 +36,7 @@ sw_pretraining = 'sw_pretrain_50.pth'
 sw_posttraining = 'sw_posttrain_50.pth'
 gail_training = "GAIL_weights_50_delta_bce.zip"
 
-# Then modify your discriminator initialization
-discriminator = LSTM_Discriminator(vocab_size=token_size, embedding_dim=64, hidden_dim=256).to(device)
-
-discriminator = torch.compile(discriminator)
+discriminator = LSTM_Discriminator(vocab_size=token_size, embedding_dim=64, hidden_dim=256)
 d_optimizer = optim.Adam(discriminator.parameters(), lr=2e-4, betas=(0.5, 0.999))
 
 env_GAIL = CustomEnv(token_size, bin_start, bin_stop, bin_width,
@@ -65,7 +51,7 @@ env_GAIL = Monitor(env_GAIL, filename=None)
 n_steps=(n_days-2)*100
 batch_size=(n_days-2)*10
 n_epochs = 4
-timesteps = 100000
+timesteps = 300000
 
 clip_range=0.05            # Lower PPO clipping
 ent_coef=0.005             # Moderate exploration
