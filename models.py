@@ -1,3 +1,11 @@
+import numpy as np
+import torch as th
+import torch.nn as nn
+import torch.optim as optim
+import gymnasium as gym
+from gymnasium import spaces
+from stable_baselines3.common.callbacks import BaseCallback
+
 class LSTMModel(nn.Module):
     def __init__(self, input_dim, hidden_dim, output_dim):  # Changed default input_dim
         super(LSTMModel, self).__init__()
@@ -9,7 +17,6 @@ class LSTMModel(nn.Module):
         lstm_out, (h_n, c_n) = self.lstm(x, hidden)
         logits = self.fc(lstm_out)
         return logits, (h_n, c_n)
-
 
 class LSTM_Discriminator(nn.Module):
 
@@ -26,7 +33,6 @@ class LSTM_Discriminator(nn.Module):
         logits = logits.squeeze(-1)
         return logits, hidden
     
-
 class CustomEnv(gym.Env):
     
     def __init__(self,
