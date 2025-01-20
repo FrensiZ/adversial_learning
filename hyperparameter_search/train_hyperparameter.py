@@ -32,23 +32,28 @@ gail_training = "GAIL_weights_50_delta_bce.zip"
 
 # Define base configuration
 base_config = {
-    
-    'timesteps': 200000,
     'n_steps': (n_days-2)*100,
     'batch_size': (n_days-2)*10,
     'n_epochs': 4,
-
-    'lr_gail': 1e-06,
-    
-    'ent_coef': 0.001,
-    'clip_range': 0.03,
+    'timesteps': 150000,  # Reduced from 300000
     'vf_coef': 0.5,
     'gamma': 0.995,
     'gae_lambda': 0.95,
-    
     'hidden_dim': 128,
     'hidden_layers': 2
 }
+
+# Define experiment configurations
+experiment_configs = [
+    {
+        'lr_gail': lr,
+        'ent_coef': ent,
+        'clip_range': clip,
+    }
+    for lr in [5e-7, 1e-6, 5e-6]
+    for ent in [0.001, 0.005, 0.01]
+    for clip in [0.02, 0.05, 0.1]
+]
 
 seeds = [1000, 1001, 1002]
 
