@@ -50,12 +50,11 @@ base_config = {
     'hidden_layers': 2
 }
 
-seeds = [1000, 1001, 1002]
+seeds = range(1000, 1020)  # 20 seeds
 
-def get_experiment_dir(config, seed, base_dir="results"):
-    """Create unique directory name based on config and seed"""
-    config_str = f"lr{config['lr_gail']}_ent{config['ent_coef']}_clip{config['clip_range']}"
-    return Path(base_dir) / config_str / f"seed_{seed}"
+def get_experiment_dir(seed, base_dir="results_20seeds"):
+    """Create directory name based on seed"""
+    return Path(base_dir) / f"seed_{seed}"
 
 def run_single_experiment(config, seed, save_dir):
     """Your current training logic goes here"""
@@ -157,18 +156,11 @@ class ExperimentWorker:
         return run_single_experiment(config, seed, save_dir)
 
 if __name__ == "__main__":
-    # Initialize Ray
     ray.init(num_cpus=4)
-    
-    # Create workers
     workers = [ExperimentWorker.remote() for _ in range(4)]
     
-    # Create experiment queue
-    experiments = [
-        (config, seed) 
-        for config in experiment_configs 
-        for seed in seeds
-    ]
+    # Create experiment queue with just seeds
+    experiments = [(base_config, seed) for seed in seeds]
     
     # Run experiments in batches
     results = []
@@ -178,15 +170,15 @@ if __name__ == "__main__":
             workers[j].run_experiment.remote(
                 config=exp[0],
                 seed=exp[1],
-                save_dir=get_experiment_dir(exp[0], exp[1])
+                save_dir=get_experiment_dir(exp[1])  # Changed to new directory function
             )
             for j, exp in enumerate(batch)
         ]
         batch_results = ray.get(batch_futures)
         results.extend(batch_results)
-        print(f"Completed batch {i//4 + 1}/{len(experiments)//4}")
+        print(f"Completed runs {i+1}-{min(i+4, len(experiments))} of {len(experiments)}")
 
     # Save final combined results
-    with open('all_results.pkl', 'wb') as f:
+    with open('all_20seeds_results.pkl', 'wb') as f:
         pickle.dump(results, f)
         

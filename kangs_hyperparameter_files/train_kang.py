@@ -61,7 +61,7 @@ seeds = [1000, 1001, 1002, 1003, 1004]
 
 def get_experiment_dir(config, seed, base_dir="results"):
     """Create unique directory name based on config and seed"""
-    config_str = f"lr{config['lr_gail']}_ent{config['ent_coef']}_clip{config['clip_range']}"
+    config_str = f"lr{config['lr_gail']}_vf{config['vf_coef']}"
     return Path(base_dir) / config_str / f"seed_{seed}"
 
 def run_single_experiment(config, seed, save_dir):
