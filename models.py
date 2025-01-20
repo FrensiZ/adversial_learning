@@ -67,9 +67,9 @@ class CustomEnv(gym.Env):
         self.seq_position = 0
         self.hidden_states = None
 
-        ### HERE
-        self.last_bce = -np.log(0.5)
-        ### HERE
+        # ### HERE
+        # self.last_bce = -np.log(0.5)
+        # ### HERE
     
     def step(self, action):
 
@@ -102,9 +102,9 @@ class CustomEnv(gym.Env):
         
         start_token = int(real_seq[0])
         
-        ### HERE
-        self.last_bce = -np.log(0.5)
-        ### HERE
+        # ### HERE
+        # self.last_bce = -np.log(0.5)
+        # ### HERE
         
         return start_token, {}
     
@@ -117,10 +117,19 @@ class CustomEnv(gym.Env):
             prediction, self.hidden_states = self.discriminator(temp_action, self.hidden_states)
             prediction = prediction[0,0]
             label = th.ones_like(prediction)
-            current_bce = self.criterion(prediction, label).item()
-            reward = self.last_bce - current_bce
-            self.last_bce = current_bce
+            seq_loss = self.criterion(prediction, label)
+            reward = -(seq_loss.item())
             return reward
+
+        # with th.no_grad():
+        #     temp_action = th.tensor(np.array([[action]]), dtype=th.long)
+        #     prediction, self.hidden_states = self.discriminator(temp_action, self.hidden_states)
+        #     prediction = prediction[0,0]
+        #     label = th.ones_like(prediction)
+        #     current_bce = self.criterion(prediction, label).item()
+        #     reward = self.last_bce - current_bce
+        #     self.last_bce = current_bce
+        #     return reward
 
     def _is_done(self):
 
@@ -275,8 +284,8 @@ class CustomCallback(BaseCallback):
                 'post_acc': 0
                 }
 
-            max_accuracy = 0.75     # Don't want discriminator too strong
-            min_batches = 2         # Changed from 10
+            max_accuracy = 0.60     # Don't want discriminator too strong
+            min_batches = 0         # Changed from 10
             max_batches = 50        # Changed from 100
 
             # Dynamic batch sizing
@@ -310,7 +319,7 @@ class CustomCallback(BaseCallback):
                         break
                     
                     recent_acc = np.mean(metrics['accuracies'][-3:])
-                    if 0.48 < recent_acc < 0.52 and np.std(metrics['accuracies'][-3:]) < 0.01:
+                    if 0.46 < recent_acc < 0.54 and np.std(metrics['accuracies'][-3:]) < 0.01:
                         print(f"Discriminator balanced near 0.5 ({recent_acc:.3f}), stopping")
                         break
                         

@@ -36,8 +36,8 @@ base_config = {
     'batch_size': (n_days-2)*10,
     'n_epochs': 4,
     'timesteps': 150000,  # Reduced from 300000
-    'vf_coef': 0.3,
-    'gamma': 1,
+    'vf_coef': 0.5,
+    'gamma': 0.995,
     'gae_lambda': 0.95,
     'hidden_dim': 128,
     'hidden_layers': 2
@@ -50,7 +50,7 @@ experiment_configs = [
         'ent_coef': ent,
         'clip_range': clip,
     }
-    for lr in [1e-7, 5e-7, 1e-6]
+    for lr in [5e-7, 1e-6, 5e-6]
     for ent in [0.001, 0.005, 0.01]
     for clip in [0.02, 0.05, 0.1]
 ]
