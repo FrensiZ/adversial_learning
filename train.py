@@ -50,9 +50,9 @@ base_config = {
     'hidden_layers': 2
 }
 
-seeds = range(1000, 1020)  # 20 seeds
+seeds = range(1000, 1030)  # 20 seeds
 
-def get_experiment_dir(seed, base_dir="results_20seeds"):
+def get_experiment_dir(seed, base_dir="results_30seeds"):
     """Create directory name based on seed"""
     return Path(base_dir) / f"seed_{seed}"
 
