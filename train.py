@@ -27,8 +27,8 @@ print("Test set:", X_test.shape)
 n_days = X_train.shape[1]
 
 sw_pretraining = 'sw_pretrain_50.pth'
-sw_posttraining = 'sw_posttrain_50.pth'
-gail_training = "GAIL_weights_50_delta_bce.zip"
+#sw_posttraining = 'sw_posttrain_50.pth'
+#gail_training = "GAIL_weights_50_delta_bce.zip"
 
 # Define base configuration
 base_config = {
