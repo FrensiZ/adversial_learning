@@ -145,8 +145,6 @@ def run_single_experiment(config, seed, save_dir):
     
     return results
 
-
-
 @ray.remote
 class ExperimentWorker:
     def __init__(self):
