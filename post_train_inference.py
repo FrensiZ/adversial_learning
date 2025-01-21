@@ -36,6 +36,7 @@ learning_rate = 2e-4
 seq_len = n_days-1
 num_epochs = 50
 hidden_layers = 2
+val_loss_pretrain = 2.5018
 
 
 @ray.remote
@@ -65,7 +66,7 @@ class PostTrainingWorker:
         
         train_loss = []
         val_loss = []
-        best_val_loss = 2.5013
+        best_val_loss = val_loss_pretrain
         max_grad_norm = 1.0
 
         # Pre-allocate tensors for validation
@@ -125,7 +126,19 @@ class PostTrainingWorker:
             train_loss.extend(temp_train_loss)
             val_loss.append(loss.item())
             print(f"Seed {seed} - Epoch {epoch+1}/{num_epochs} - Train Loss: {np.mean(temp_train_loss):.4f} - Val Loss: {loss.item():.4f}")
+
         
+        if best_val_loss < val_loss_pretrain:  # If we found a better model during post-training
+            print(f"Seed {seed} - Using post-trained model for inference (val_loss: {best_val_loss:.4f})")
+            inference_model = LSTMModel(input_dim=token_size, hidden_dim=hidden_dim, output_dim=token_size)
+            best_checkpoint = th.load(save_dir / "best_model.pth")
+            inference_model.load_state_dict(best_checkpoint['model_state_dict'])
+        else:
+            print(f"Seed {seed} - Using original pretrained model for inference")
+            inference_model = LSTMModel(input_dim=token_size, hidden_dim=hidden_dim, output_dim=token_size)
+            original_checkpoint = th.load(sw_pretraining)
+            inference_model.load_state_dict(original_checkpoint['model_state_dict'])
+
         # Run inference
         supervised_post_data = run_inference(post_supervised_model, X_test)
         
