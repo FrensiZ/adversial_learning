@@ -36,14 +36,13 @@ learning_rate = 2e-4
 seq_len = n_days-1
 num_epochs = 50
 hidden_layers = 2
-val_loss_pretrain = 2.5018
 
 
 @ray.remote
 class PostTrainingWorker:
-    
-    def __init__(self):
-        pass
+
+    def __init__(self, val_loss_pretrain):  # Add initial val loss as parameter
+        self.val_loss_pretrain = val_loss_pretrain
 
     def run_post_training(self, seed, save_dir):
         # Set random seed
@@ -66,7 +65,7 @@ class PostTrainingWorker:
         
         train_loss = []
         val_loss = []
-        best_val_loss = val_loss_pretrain
+        best_val_loss = self.val_loss_pretrain
         max_grad_norm = 1.0
 
         # Pre-allocate tensors for validation
@@ -128,14 +127,15 @@ class PostTrainingWorker:
             print(f"Seed {seed} - Epoch {epoch+1}/{num_epochs} - Train Loss: {np.mean(temp_train_loss):.4f} - Val Loss: {loss.item():.4f}")
 
         
-        if best_val_loss < val_loss_pretrain:  # If we found a better model during post-training
+       # Your inference part with updated comparison
+        if best_val_loss < self.val_loss_pretrain:  # Compare with initial val loss
             print(f"Seed {seed} - Using post-trained model for inference (val_loss: {best_val_loss:.4f})")
-            inference_model = LSTMModel(input_dim=token_size, hidden_dim=hidden_dim, output_dim=token_size)
+            inference_model = LSTMModel(input_dim=token_size, hidden_dim=hidden_dim, output_dim=token_size, num_layers=hidden_layers)
             best_checkpoint = th.load(save_dir / "best_model.pth")
             inference_model.load_state_dict(best_checkpoint['model_state_dict'])
         else:
-            print(f"Seed {seed} - Using original pretrained model for inference")
-            inference_model = LSTMModel(input_dim=token_size, hidden_dim=hidden_dim, output_dim=token_size)
+            print(f"Seed {seed} - Using original pretrained model for inference (val_loss: {self.val_loss_pretrain:.4f})")
+            inference_model = LSTMModel(input_dim=token_size, hidden_dim=hidden_dim, output_dim=token_size, num_layers=hidden_layers)
             original_checkpoint = th.load(sw_pretraining)
             inference_model.load_state_dict(original_checkpoint['model_state_dict'])
 
@@ -154,6 +154,30 @@ class PostTrainingWorker:
             pickle.dump(results, f)
             
         return results
+
+def calculate_initial_val_loss():
+    # Initialize model with pretrained weights
+    initial_model = LSTMModel(input_dim=token_size, hidden_dim=hidden_dim, output_dim=token_size, num_layers=hidden_layers)
+    checkpoint = th.load(sw_pretraining)
+    initial_model.load_state_dict(checkpoint['model_state_dict'])
+    
+    # Prepare validation data (same as in training)
+    val_input_tokens = th.tensor(X_val[:, :-1], dtype=th.long)
+    val_targets = th.tensor(X_val[:, 1:], dtype=th.long)
+    val_onehot = to_onehot(val_input_tokens, token_size)
+    
+    # Calculate validation loss
+    initial_model.eval()
+    criterion = nn.CrossEntropyLoss()
+    
+    with th.no_grad():
+        logits, _ = initial_model(val_onehot, None)
+        logits = logits.reshape(-1, logits.size(-1))
+        targets = val_targets.reshape(-1)
+        initial_val_loss = criterion(logits, targets).item()
+    
+    print(f"Initial validation loss of pretrained model: {initial_val_loss:.4f}")
+    return initial_val_loss
 
 def run_inference(model, test_data):
     test_data_inference = th.tensor(test_data, dtype=th.long)
@@ -179,12 +203,12 @@ def run_inference(model, test_data):
     
     return np.array(supervised_post_data)
 
-def run_post_training_parallel():
+def run_post_training_parallel(initial_val_loss):
     # Initialize Ray
     ray.init(num_cpus=4)
     
     # Create workers
-    workers = [PostTrainingWorker.remote() for _ in range(4)]
+    workers = [PostTrainingWorker.remote(initial_val_loss) for _ in range(4)]
     
     # Create experiment queue
     seeds = range(1000, 1030)  # 30 seeds
@@ -211,6 +235,8 @@ def run_post_training_parallel():
     ray.shutdown()
     return results
 
+# Add this before starting the parallel training:
 if __name__ == "__main__":
-    results = run_post_training_parallel()
+    initial_val_loss = calculate_initial_val_loss()
+    results = run_post_training_parallel(initial_val_loss)  # Pass the valu
 
