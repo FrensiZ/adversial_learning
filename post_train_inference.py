@@ -34,7 +34,7 @@ hidden_dim = 128
 batch_size = 256
 learning_rate = 2e-4
 seq_len = n_days-1
-num_epochs = 50
+num_epochs = 20
 hidden_layers = 2
 
 
