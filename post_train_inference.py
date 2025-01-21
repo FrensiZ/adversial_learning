@@ -4,6 +4,7 @@ from data_processing import to_onehot, to_onehot_inference
 from torch.nn import functional as F
 import ray
 from pathlib import Path
+import torch as th
 
 # Load the processed data
 with open('processed_data.pkl', 'rb') as f:
@@ -52,7 +53,7 @@ class PostTrainingWorker:
         save_dir.mkdir(parents=True, exist_ok=True)
         
         # Model initialization
-        post_supervised_model = LSTMModel(input_dim=token_size, hidden_dim=hidden_dim, output_dim=token_size)
+        post_supervised_model = LSTMModel(input_dim=token_size, hidden_dim=hidden_dim, output_dim=token_size, num_layers=hidden_layers)
         post_supervised_optimizer = th.optim.Adam(post_supervised_model.parameters(), lr=learning_rate)
         
         # Load pretrained weights
